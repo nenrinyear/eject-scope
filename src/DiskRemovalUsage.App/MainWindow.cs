@@ -51,7 +51,8 @@ public sealed class MainWindow : Window
         controls.Children.Add(new TextBlock { Text = "対象ドライブ", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
         controls.Children.Add(_drives);
         controls.Children.Add(_scan);
-        if (_settings.ShowElevateButton) controls.Children.Add(_elevate);
+        _elevate.Visibility = _settings.ShowElevateButton ? Visibility.Visible : Visibility.Collapsed;
+        controls.Children.Add(_elevate);
         controls.Children.Add(_terminate);
         var panel = new DockPanel { Margin = new Thickness(14) };
         DockPanel.SetDock(controls, Dock.Top);
@@ -139,6 +140,7 @@ public sealed class MainWindow : Window
                 MessageBox.Show(ex.Message, "設定を保存できません", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             _terminate.IsEnabled = _settings.EnableTerminateSuggestion && (_grid.SelectedItem as ProcessUsage)?.CanTerminate == true;
+            _elevate.Visibility = _settings.ShowElevateButton ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 }
