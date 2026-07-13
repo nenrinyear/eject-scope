@@ -5,10 +5,10 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
-using DiskRemovalUsage.Core;
-using DiskRemovalUsage.Core.Models;
+using EjectScope.Core;
+using EjectScope.Core.Models;
 
-namespace DiskRemovalUsage.App;
+namespace EjectScope.App;
 
 public sealed class MainWindow : Window
 {
@@ -27,7 +27,7 @@ public sealed class MainWindow : Window
 
     public MainWindow()
     {
-        Title = "ディスク取り外しブロッカー解析";
+        Title = "EjectScope — 取り外しブロッカー解析";
         Width = 980;
         Height = 520;
         MinWidth = 720;

@@ -1,4 +1,4 @@
-# Disk Removal Usage
+# EjectScope
 
 A Windows tray application that helps identify processes preventing safe removal of a USB drive or external storage device.
 
@@ -22,9 +22,9 @@ A Windows tray application that helps identify processes preventing safe removal
 ## Build and run
 
 ```powershell
-dotnet restore DiskRemovalUsage.sln
-dotnet build DiskRemovalUsage.sln --configuration Release --no-restore
-dotnet run --project src/DiskRemovalUsage.App
+dotnet restore EjectScope.sln
+dotnet build EjectScope.sln --configuration Release --no-restore
+dotnet run --project src/EjectScope.App
 ```
 
 ## How detection works

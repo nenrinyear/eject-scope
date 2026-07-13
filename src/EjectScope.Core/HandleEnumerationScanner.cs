@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using DiskRemovalUsage.Core.Models;
+using EjectScope.Core.Models;
 
-namespace DiskRemovalUsage.Core;
+namespace EjectScope.Core;
 
 /// <summary>管理者権限でシステムのファイルハンドルを調べ、指定ドライブを使用中のプロセスを返します。</summary>
 internal sealed class HandleEnumerationScanner

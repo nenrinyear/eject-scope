@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\DiskRemovalUsage.Core\DiskRemovalUsage.Core.csproj" />
+    <ProjectReference Include="..\EjectScope.Core\EjectScope.Core.csproj" />
     <Using Remove="System.Windows.Forms" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,6 @@
-using DiskRemovalUsage.Core.Models;
+using EjectScope.Core.Models;
 
-namespace DiskRemovalUsage.Core;
+namespace EjectScope.Core;
 
 public static class ProcessRiskEvaluator
 {

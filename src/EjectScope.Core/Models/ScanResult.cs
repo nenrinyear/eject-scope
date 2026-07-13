@@ -1,4 +1,4 @@
-namespace DiskRemovalUsage.Core.Models;
+namespace EjectScope.Core.Models;
 
 public sealed record ScanResult(
     string DriveRoot,

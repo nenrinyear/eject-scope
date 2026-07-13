@@ -8,8 +8,8 @@ Thanks for considering a contribution.
 - .NET SDK version specified in `global.json`
 
 ```powershell
-dotnet restore DiskRemovalUsage.sln
-dotnet build DiskRemovalUsage.sln --configuration Release --no-restore
+dotnet restore EjectScope.sln
+dotnet build EjectScope.sln --configuration Release --no-restore
 ```
 
 ## Pull requests

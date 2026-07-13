@@ -1,4 +1,4 @@
-namespace DiskRemovalUsage.Core;
+namespace EjectScope.Core;
 
 public static class DriveValidator
 {

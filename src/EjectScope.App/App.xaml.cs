@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace DiskRemovalUsage.App;
+namespace EjectScope.App;
 
 public partial class App : Application
 {

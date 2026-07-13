@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Numerics;
 
-namespace DiskRemovalUsage.App;
+namespace EjectScope.App;
 
 internal static class DeviceChange
 {

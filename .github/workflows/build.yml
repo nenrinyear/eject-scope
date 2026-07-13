@@ -16,5 +16,5 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
-      - run: dotnet restore DiskRemovalUsage.sln
-      - run: dotnet build DiskRemovalUsage.sln --configuration Release --no-restore
+      - run: dotnet restore EjectScope.sln
+      - run: dotnet build EjectScope.sln --configuration Release --no-restore

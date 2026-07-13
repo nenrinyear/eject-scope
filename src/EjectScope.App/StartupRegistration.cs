@@ -1,10 +1,11 @@
 using Microsoft.Win32;
 
-namespace DiskRemovalUsage.App;
+namespace EjectScope.App;
 
 internal static class StartupRegistration
 {
-    private const string ValueName = "DiskRemovalUsage";
+    private const string ValueName = "EjectScope";
+    private const string LegacyValueName = "DiskRemovalUsage";
     private const string RunKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
     public static void SetEnabled(bool enabled)
@@ -14,7 +15,12 @@ internal static class StartupRegistration
         {
             var executable = Environment.ProcessPath ?? throw new InvalidOperationException("実行ファイルのパスを取得できません。");
             key.SetValue(ValueName, $"\"{executable}\"");
+            key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
         }
-        else key.DeleteValue(ValueName, throwOnMissingValue: false);
+        else
+        {
+            key.DeleteValue(ValueName, throwOnMissingValue: false);
+            key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
+        }
     }
 }

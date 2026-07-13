@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 
-namespace DiskRemovalUsage.App;
+namespace EjectScope.App;
 
 public sealed class SettingsWindow : Window
 {

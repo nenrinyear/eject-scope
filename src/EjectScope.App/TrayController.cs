@@ -1,7 +1,7 @@
 using System.Windows;
 using Forms = System.Windows.Forms;
 
-namespace DiskRemovalUsage.App;
+namespace EjectScope.App;
 
 public sealed class TrayController : IDisposable
 {
@@ -17,7 +17,7 @@ public sealed class TrayController : IDisposable
         menu.Items.Add("設定", null, (_, _) => _window.ShowSettings());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("終了", null, (_, _) => Exit());
-        _icon = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Text = "ディスク取り外しブロッカー解析", Visible = true, ContextMenuStrip = menu };
+        _icon = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Text = "EjectScope — 取り外しブロッカー解析", Visible = true, ContextMenuStrip = menu };
         _icon.DoubleClick += (_, _) => ShowWindow();
         _window.Closed += (_, _) => Application.Current.Shutdown();
     }

@@ -1,6 +1,6 @@
-using DiskRemovalUsage.Core.Models;
+using EjectScope.Core.Models;
 
-namespace DiskRemovalUsage.Core;
+namespace EjectScope.Core;
 
 /// <summary>指定ドライブを使用中のプロセスを取得します。</summary>
 public sealed class RestartManagerScanner
