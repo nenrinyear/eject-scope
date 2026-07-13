@@ -54,4 +54,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 
-A license has not been selected yet. Do not redistribute or reuse this code until a license is added.
+This project is licensed under the [MIT License](LICENSE).
