@@ -9,5 +9,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\DiskRemovalUsage.Core\DiskRemovalUsage.Core.csproj" />
+    <Using Remove="System.Windows.Forms" />
   </ItemGroup>
 </Project>
