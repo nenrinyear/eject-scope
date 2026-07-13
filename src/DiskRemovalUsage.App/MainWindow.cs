@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using DiskRemovalUsage.Core;
 using DiskRemovalUsage.Core.Models;
 
@@ -20,6 +21,7 @@ public sealed class MainWindow : Window
     private readonly DataGrid _grid = new() { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Single, MinHeight = 250 };
     private readonly RestartManagerScanner _scanner = new();
     private readonly AppSettings _settings = AppSettings.Load();
+    private readonly Dictionary<string, DateTime> _recentRemovalFailures = new(StringComparer.OrdinalIgnoreCase);
 
     public bool AllowClose { get; set; }
 
@@ -36,6 +38,7 @@ public sealed class MainWindow : Window
         _terminate.Click += async (_, _) => await TerminateSelectedAsync();
         _grid.SelectionChanged += (_, _) => _terminate.IsEnabled = _settings.EnableTerminateSuggestion && (_grid.SelectedItem as ProcessUsage)?.CanTerminate == true;
         Closing += (_, e) => { if (!AllowClose) { e.Cancel = true; Hide(); } };
+        SourceInitialized += (_, _) => (PresentationSource.FromVisual(this) as HwndSource)?.AddHook(WndProc);
     }
 
     private UIElement BuildContent()
@@ -90,6 +93,30 @@ public sealed class MainWindow : Window
         _status.Text = drives.Length == 0
             ? "対象にできるローカルドライブがありません。ドライブを接続後、［スキャン］を押して再読み込みしてください。"
             : "ドライブを選んでスキャンしてください。USB 外付けドライブは Windows 上で「固定」と表示される場合も候補に含めています。";
+    }
+
+    private IntPtr WndProc(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message == DeviceChange.Message && wParam.ToInt64() == DeviceChange.QueryRemoveFailed && DeviceChange.TryGetDriveRoot(lParam, out var drive))
+        {
+            Dispatcher.BeginInvoke(async () => await HandleRemovalFailureAsync(drive));
+        }
+        return IntPtr.Zero;
+    }
+
+    private async Task HandleRemovalFailureAsync(string drive)
+    {
+        var now = DateTime.UtcNow;
+        if (_recentRemovalFailures.TryGetValue(drive, out var lastSeen) && now - lastSeen < TimeSpan.FromSeconds(3)) return;
+        _recentRemovalFailures[drive] = now;
+
+        PopulateDrives();
+        if (_drives.Items.Cast<string>().Contains(drive, StringComparer.OrdinalIgnoreCase)) _drives.SelectedItem = drive;
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+        _status.Text = $"{drive} の安全な取り外しが失敗しました。使用中のプロセスを確認してください。";
+        if (_settings.AutoScanOnRemovalFailure && _drives.SelectedItem is not null) await ScanAsync();
     }
 
     public async Task ScanAsync()
