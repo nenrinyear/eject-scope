@@ -1,0 +1,35 @@
+name: Bug report
+description: Report an unexpected behavior or scan failure.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include file names, drive labels, or other sensitive information unless it is necessary to reproduce the issue."
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Connect ...\n2. ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+  - type: dropdown
+    id: elevation
+    attributes:
+      label: Was the app running as administrator?
+      options: ["Yes", "No", "I don't know"]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant message or screenshot
+      description: Redact personal paths and drive labels before submitting.

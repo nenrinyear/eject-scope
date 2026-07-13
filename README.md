@@ -1,36 +1,57 @@
-# ディスク取り外しブロッカー解析
+# Disk Removal Usage
 
-Windows のリムーバブルドライブを安全に取り外せないとき、使用中のプロセスを確認する .NET 10 のトレイ常駐ツールです。
+A Windows tray application that helps identify processes preventing safe removal of a USB drive or external storage device.
 
-## できること
+> The app diagnoses likely blockers; it does not force-eject a device. Use Windows' standard safe-removal flow after resolving the cause.
 
-- リムーバブルまたは外付けドライブ（例: `E:\`）を選んで、管理者権限で使用中ファイルハンドルを検出
-- プロセス名、PID、実行ファイル、対象範囲、終了の目安、推奨操作を一覧表示
-- システムプロセスの終了を無効化し、Explorer・同期・編集系アプリには注意を表示
-- 選択したプロセスのみ、明示的な確認後に終了
-- トレイメニューからスキャン、再スキャン、設定、終了
-- 起動時常駐、管理者再起動ボタン、終了提案の各設定
+## Features
 
-このツールは取り外しを強制しません。原因を把握した後、Windows の「安全な取り外し」を再試行してください。
+- Lists local removable and external drives, excluding the Windows system drive and network drives.
+- Detects processes holding file handles on the selected drive when run as administrator.
+- Shows process name, PID, executable path, locked path, risk level, and a recommended action.
+- Opens the scanner when Windows reports a failed removal request, and can optionally scan automatically.
+- Requires explicit confirmation before terminating a user-selected process; system processes cannot be terminated from the app.
+- Runs from the notification area with startup and elevation options.
 
-## ビルドと起動
+## Requirements
 
-Windows 上で .NET 10 SDK をインストールしてから実行します。
+- Windows 10 or later
+- .NET SDK 10.0.301 or a compatible later patch version for development
+- Administrator rights for system-wide file-handle detection
+
+## Build and run
 
 ```powershell
-dotnet build DiskRemovalUsage.sln
+dotnet restore DiskRemovalUsage.sln
+dotnet build DiskRemovalUsage.sln --configuration Release --no-restore
 dotnet run --project src/DiskRemovalUsage.App
 ```
 
-## 検出について
+## How detection works
 
-Restart Manager はファイル名を対象とするAPIで、ドライブルートのようなディレクトリは直接登録できません。そのため、このツールでは管理者権限で Windows のファイルハンドルを列挙し、対象ドライブ配下の実パスを表示します。通常権限ではプロセス間のハンドル複製ができないため、［管理者として再起動］を案内します。
+Windows Restart Manager accepts file paths, not a whole drive directory. For drive-level detection, this app duplicates file handles from running processes and resolves their final paths. That requires elevation to inspect handles owned by other processes.
 
-## 手動確認シナリオ
+Without elevation, the app can still open itself after a failed removal notification and guide you to restart as administrator, but it cannot guarantee a complete blocker list.
 
-1. USB メモリのテキストファイルを Notepad で開き、対象ドライブをスキャンする。
-2. Explorer で対象ドライブを開き、注意対象として表示されるか確認する。
-3. VS Code、画像ビューア、同期ソフトなど複数アプリで使用し、一覧を確認する。
-4. 通常権限と管理者権限でステータスメッセージを比較する。
-5. 終了ボタンの確認ダイアログでキャンセルし、プロセスが残ることを確認する。
-6. システムプロセスが検出された場合、終了ボタンが無効であることを確認する。
+## Safety and privacy
+
+- No telemetry or network communication is implemented.
+- Settings are stored locally under the current user's Local AppData directory.
+- Scan results can contain sensitive file paths. Review and redact them before filing an issue or sharing a screenshot.
+- The app never forces removal and never terminates a process without a confirmation dialog.
+
+## Manual verification
+
+1. Open a file on a USB drive in Notepad, then scan the drive as administrator.
+2. Open the drive in Explorer and verify that it is shown as a caution-level process if detected.
+3. Trigger a failed safe-removal attempt and verify that the scanner window opens with the corresponding drive selected.
+4. Confirm that cancelling the termination dialog leaves the process running.
+5. Confirm that system processes cannot be terminated from the app.
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+
+## License
+
+A license has not been selected yet. Do not redistribute or reuse this code until a license is added.

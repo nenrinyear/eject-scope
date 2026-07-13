@@ -3,3 +3,11 @@ obj/
 .vs/
 *.user
 *.suo
+TestResults/
+artifacts/
+publish/
+*.log
+*.pfx
+*.snk
+.env
+.env.*
