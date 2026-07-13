@@ -11,8 +11,11 @@ public static class DriveValidator
 
         var info = new DriveInfo(root);
         if (!info.IsReady) throw new IOException("対象ドライブにアクセスできません。");
-        if (info.DriveType != DriveType.Removable)
-            throw new ArgumentException("リムーバブルドライブのみを対象にできます。", nameof(drive));
+        var systemRoot = Path.GetPathRoot(Environment.SystemDirectory);
+        if (string.Equals(info.RootDirectory.FullName, systemRoot, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Windows が起動しているシステムドライブは対象にできません。", nameof(drive));
+        if (info.DriveType is not (DriveType.Removable or DriveType.Fixed))
+            throw new ArgumentException("ローカルのリムーバブルまたは外付けドライブを指定してください。", nameof(drive));
         return info.RootDirectory.FullName;
     }
 }

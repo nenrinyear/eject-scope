@@ -78,10 +78,18 @@ public sealed class MainWindow : Window
 
     private void PopulateDrives()
     {
-        var drives = DriveInfo.GetDrives().Where(d => d.DriveType == DriveType.Removable && d.IsReady).Select(d => d.RootDirectory.FullName).ToArray();
+        var systemRoot = Path.GetPathRoot(Environment.SystemDirectory);
+        var drives = DriveInfo.GetDrives()
+            .Where(d => d.IsReady)
+            .Where(d => d.DriveType is DriveType.Removable or DriveType.Fixed)
+            .Where(d => !string.Equals(d.RootDirectory.FullName, systemRoot, StringComparison.OrdinalIgnoreCase))
+            .Select(d => d.RootDirectory.FullName)
+            .ToArray();
         _drives.ItemsSource = drives;
         _drives.SelectedIndex = drives.Length > 0 ? 0 : -1;
-        _status.Text = drives.Length == 0 ? "接続されているリムーバブルドライブがありません。" : "ドライブを選んでスキャンしてください。";
+        _status.Text = drives.Length == 0
+            ? "対象にできるローカルドライブがありません。ドライブを接続後、［スキャン］を押して再読み込みしてください。"
+            : "ドライブを選んでスキャンしてください。USB 外付けドライブは Windows 上で「固定」と表示される場合も候補に含めています。";
     }
 
     public async Task ScanAsync()
