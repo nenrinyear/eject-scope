@@ -24,23 +24,34 @@ internal sealed class HandleEnumerationScanner
         var offset = IntPtr.Size * 2;
         var size = Marshal.SizeOf<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>();
         var pathsByProcess = new Dictionary<int, HashSet<string>>();
+        var processHandles = new Dictionary<int, IntPtr>();
+        var diskTypeByObjectType = new Dictionary<ushort, bool>();
 
-        for (long index = 0; index < count; index++)
+        try
         {
-            if ((index & 1023) == 0)
+            for (long index = 0; index < count; index++)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                progress?.Report(new ScanProgress("ファイルハンドルを確認中", index, count));
-            }
-            var entryPointer = IntPtr.Add(buffer.Pointer, checked((int)(offset + index * size)));
-            var entry = Marshal.PtrToStructure<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>(entryPointer);
-            var pid64 = entry.UniqueProcessId.ToInt64();
-            if (pid64 <= 4 || pid64 > int.MaxValue) continue;
+                if ((index & 127) == 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    progress?.Report(new ScanProgress("ファイルハンドルを確認中", index, count));
+                }
+                var entryPointer = IntPtr.Add(buffer.Pointer, checked((int)(offset + index * size)));
+                var entry = Marshal.PtrToStructure<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>(entryPointer);
+                var pid64 = entry.UniqueProcessId.ToInt64();
+                if (pid64 <= 4 || pid64 > int.MaxValue) continue;
+                if (diskTypeByObjectType.TryGetValue(entry.ObjectTypeIndex, out var isDisk) && !isDisk) continue;
 
-            var path = TryGetFilePath((int)pid64, entry.HandleValue);
-            if (path is null || !IsOnDrive(path, driveRoot)) continue;
-            if (!pathsByProcess.TryGetValue((int)pid64, out var paths)) pathsByProcess[(int)pid64] = paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            paths.Add(path);
+                var result = TryGetFilePath((int)pid64, entry.HandleValue, processHandles);
+                if (result.IsDisk is bool detectedDisk) diskTypeByObjectType[entry.ObjectTypeIndex] = detectedDisk;
+                if (result.Path is null || !IsOnDrive(result.Path, driveRoot)) continue;
+                if (!pathsByProcess.TryGetValue((int)pid64, out var paths)) pathsByProcess[(int)pid64] = paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                paths.Add(result.Path);
+            }
+        }
+        finally
+        {
+            foreach (var processHandle in processHandles.Values.Where(handle => handle != IntPtr.Zero)) Native.CloseHandle(processHandle);
         }
 
         progress?.Report(new ScanProgress("検出結果を整理中", count, count));
@@ -66,24 +77,26 @@ internal sealed class HandleEnumerationScanner
         catch (InvalidOperationException) { return null; }
     }
 
-    private static string? TryGetFilePath(int pid, IntPtr sourceHandle)
+    private static HandlePathResult TryGetFilePath(int pid, IntPtr sourceHandle, Dictionary<int, IntPtr> processHandles)
     {
-        var process = Native.OpenProcess(ProcessDupHandle | ProcessQueryLimitedInformation, false, pid);
-        if (process == IntPtr.Zero) return null;
+        if (!processHandles.TryGetValue(pid, out var process))
+        {
+            process = Native.OpenProcess(ProcessDupHandle | ProcessQueryLimitedInformation, false, pid);
+            processHandles[pid] = process;
+        }
+        if (process == IntPtr.Zero) return new HandlePathResult(null, null);
+        if (!Native.DuplicateHandle(process, sourceHandle, Native.GetCurrentProcess(), out var duplicate, 0, false, DuplicateSameAccess)) return new HandlePathResult(null, null);
         try
         {
-            if (!Native.DuplicateHandle(process, sourceHandle, Native.GetCurrentProcess(), out var duplicate, 0, false, DuplicateSameAccess)) return null;
-            try
-            {
-                if (Native.GetFileType(duplicate) != FileTypeDisk) return null;
-                var path = new char[32_768];
-                var length = Native.GetFinalPathNameByHandle(duplicate, path, (uint)path.Length, 0);
-                return length is 0 or >= 32_768 ? null : new string(path, 0, (int)length);
-            }
-            finally { Native.CloseHandle(duplicate); }
+            if (Native.GetFileType(duplicate) != FileTypeDisk) return new HandlePathResult(null, false);
+            var path = new char[32_768];
+            var length = Native.GetFinalPathNameByHandle(duplicate, path, (uint)path.Length, 0);
+            return length is 0 or >= 32_768 ? new HandlePathResult(null, true) : new HandlePathResult(new string(path, 0, (int)length), true);
         }
-        finally { Native.CloseHandle(process); }
+        finally { Native.CloseHandle(duplicate); }
     }
+
+    private sealed record HandlePathResult(string? Path, bool? IsDisk);
 
     private static bool IsOnDrive(string path, string driveRoot)
     {
