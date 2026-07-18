@@ -25,7 +25,6 @@ internal sealed class HandleEnumerationScanner
         var size = Marshal.SizeOf<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>();
         var pathsByProcess = new Dictionary<int, HashSet<string>>();
         var processHandles = new Dictionary<int, IntPtr>();
-        var diskTypeByObjectType = new Dictionary<ushort, bool>();
 
         try
         {
@@ -40,13 +39,11 @@ internal sealed class HandleEnumerationScanner
                 var entry = Marshal.PtrToStructure<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>(entryPointer);
                 var pid64 = entry.UniqueProcessId.ToInt64();
                 if (pid64 <= 4 || pid64 > int.MaxValue) continue;
-                if (diskTypeByObjectType.TryGetValue(entry.ObjectTypeIndex, out var isDisk) && !isDisk) continue;
 
-                var result = TryGetFilePath((int)pid64, entry.HandleValue, processHandles);
-                if (result.IsDisk is bool detectedDisk) diskTypeByObjectType[entry.ObjectTypeIndex] = detectedDisk;
-                if (result.Path is null || !IsOnDrive(result.Path, driveRoot)) continue;
+                var path = TryGetFilePath((int)pid64, entry.HandleValue, processHandles);
+                if (path is null || !IsOnDrive(path, driveRoot)) continue;
                 if (!pathsByProcess.TryGetValue((int)pid64, out var paths)) pathsByProcess[(int)pid64] = paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                paths.Add(result.Path);
+                paths.Add(path);
             }
         }
         finally
@@ -77,26 +74,26 @@ internal sealed class HandleEnumerationScanner
         catch (InvalidOperationException) { return null; }
     }
 
-    private static HandlePathResult TryGetFilePath(int pid, IntPtr sourceHandle, Dictionary<int, IntPtr> processHandles)
+    // ObjectTypeIndex cannot be cached as "disk" or "not disk": Windows groups disk files,
+    // pipes, and other kernel file objects under the same File object type.
+    private static string? TryGetFilePath(int pid, IntPtr sourceHandle, Dictionary<int, IntPtr> processHandles)
     {
         if (!processHandles.TryGetValue(pid, out var process))
         {
             process = Native.OpenProcess(ProcessDupHandle | ProcessQueryLimitedInformation, false, pid);
             processHandles[pid] = process;
         }
-        if (process == IntPtr.Zero) return new HandlePathResult(null, null);
-        if (!Native.DuplicateHandle(process, sourceHandle, Native.GetCurrentProcess(), out var duplicate, 0, false, DuplicateSameAccess)) return new HandlePathResult(null, null);
+        if (process == IntPtr.Zero) return null;
+        if (!Native.DuplicateHandle(process, sourceHandle, Native.GetCurrentProcess(), out var duplicate, 0, false, DuplicateSameAccess)) return null;
         try
         {
-            if (Native.GetFileType(duplicate) != FileTypeDisk) return new HandlePathResult(null, false);
+            if (Native.GetFileType(duplicate) != FileTypeDisk) return null;
             var path = new char[32_768];
             var length = Native.GetFinalPathNameByHandle(duplicate, path, (uint)path.Length, 0);
-            return length is 0 or >= 32_768 ? new HandlePathResult(null, true) : new HandlePathResult(new string(path, 0, (int)length), true);
+            return length is 0 or >= 32_768 ? null : new string(path, 0, (int)length);
         }
         finally { Native.CloseHandle(duplicate); }
     }
-
-    private sealed record HandlePathResult(string? Path, bool? IsDisk);
 
     private static bool IsOnDrive(string path, string driveRoot)
     {
