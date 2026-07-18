@@ -14,14 +14,17 @@ public sealed class MainWindow : Window
 {
     private readonly ComboBox _drives = new() { MinWidth = 130, Margin = new Thickness(0, 0, 8, 0) };
     private readonly Button _scan = new() { Content = "スキャン", Padding = new Thickness(14, 4, 14, 4) };
+    private readonly Button _cancelScan = new() { Content = "キャンセル", IsEnabled = false, Margin = new Thickness(8, 0, 0, 0) };
     private readonly Button _elevate = new() { Content = "管理者として再起動", Margin = new Thickness(8, 0, 0, 0) };
     private readonly Button _terminate = new() { Content = "選択したプロセスを終了", IsEnabled = false, Margin = new Thickness(8, 0, 0, 0) };
     private readonly TextBlock _status = new() { Margin = new Thickness(0, 10, 0, 6), TextWrapping = TextWrapping.Wrap };
+    private readonly ProgressBar _progress = new() { Height = 14, Minimum = 0, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 8) };
     private readonly ObservableCollection<ProcessUsage> _items = [];
     private readonly DataGrid _grid = new() { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Single, MinHeight = 250 };
     private readonly RestartManagerScanner _scanner = new();
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly Dictionary<string, DateTime> _recentRemovalFailures = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? _scanCancellation;
 
     public bool AllowClose { get; set; }
 
@@ -34,6 +37,7 @@ public sealed class MainWindow : Window
         Content = BuildContent();
         PopulateDrives();
         _scan.Click += async (_, _) => await ScanAsync();
+        _cancelScan.Click += (_, _) => _scanCancellation?.Cancel();
         _elevate.Click += (_, _) => RestartElevated();
         _terminate.Click += async (_, _) => await TerminateSelectedAsync();
         _grid.SelectionChanged += (_, _) => _terminate.IsEnabled = _settings.EnableTerminateSuggestion && (_grid.SelectedItem as ProcessUsage)?.CanTerminate == true;
@@ -55,14 +59,17 @@ public sealed class MainWindow : Window
         controls.Children.Add(new TextBlock { Text = "対象ドライブ", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) });
         controls.Children.Add(_drives);
         controls.Children.Add(_scan);
+        controls.Children.Add(_cancelScan);
         _elevate.Visibility = _settings.ShowElevateButton ? Visibility.Visible : Visibility.Collapsed;
         controls.Children.Add(_elevate);
         controls.Children.Add(_terminate);
         var panel = new DockPanel { Margin = new Thickness(14) };
         DockPanel.SetDock(controls, Dock.Top);
         DockPanel.SetDock(_status, Dock.Top);
+        DockPanel.SetDock(_progress, Dock.Top);
         panel.Children.Add(controls);
         panel.Children.Add(_status);
+        panel.Children.Add(_progress);
         panel.Children.Add(_grid);
         return panel;
     }
@@ -121,25 +128,54 @@ public sealed class MainWindow : Window
 
     public async Task ScanAsync()
     {
+        if (_scanCancellation is not null) return;
         if (_drives.SelectedItem is not string drive)
         {
             PopulateDrives();
             return;
         }
+        using var cancellation = new CancellationTokenSource();
+        _scanCancellation = cancellation;
         try
         {
             _scan.IsEnabled = false;
+            _cancelScan.IsEnabled = true;
+            _progress.IsIndeterminate = true;
+            _progress.Visibility = Visibility.Visible;
             _status.Text = $"{drive} をスキャンしています…";
-            var result = await _scanner.ScanAsync(drive);
+            var progress = new Progress<ScanProgress>(value => UpdateScanProgress(drive, cancellation, value));
+            var result = await _scanner.ScanAsync(drive, progress, cancellation.Token);
             _items.Clear();
             foreach (var item in result.Processes) _items.Add(item);
-            _status.Text = result.Processes.Count == 0 ? $"{drive} を使用中のプロセスは Restart Manager では検出されませんでした。" : $"{result.Processes.Count} 件検出。{result.Detail}";
+            _status.Text = result.Processes.Count == 0 ? result.Detail : $"{result.Processes.Count} 件検出。{result.Detail}";
         }
+        catch (OperationCanceledException) { _status.Text = "スキャンをキャンセルしました。"; }
         catch (Exception ex) when (ex is ArgumentException or IOException or Win32Exception)
         {
             _status.Text = ex.Message;
         }
-        finally { _scan.IsEnabled = true; }
+        finally
+        {
+            _scanCancellation = null;
+            _scan.IsEnabled = true;
+            _cancelScan.IsEnabled = false;
+            _progress.Visibility = Visibility.Collapsed;
+            _progress.IsIndeterminate = false;
+        }
+    }
+
+    private void UpdateScanProgress(string drive, CancellationTokenSource cancellation, ScanProgress progress)
+    {
+        if (_scanCancellation != cancellation) return;
+        _progress.IsIndeterminate = progress.Total is null;
+        if (progress.Total is long total)
+        {
+            _progress.Maximum = Math.Max(total, 1);
+            _progress.Value = Math.Min(progress.Completed, total);
+            var percent = total == 0 ? 100 : progress.Completed * 100 / total;
+            _status.Text = $"{drive} をスキャンしています… {progress.Phase} ({percent}%)";
+        }
+        else _status.Text = $"{drive} をスキャンしています… {progress.Phase}";
     }
 
     private async Task TerminateSelectedAsync()

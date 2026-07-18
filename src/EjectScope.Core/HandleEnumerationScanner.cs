@@ -15,17 +15,23 @@ internal sealed class HandleEnumerationScanner
     private const uint DuplicateSameAccess = 0x00000002;
     private const uint FileTypeDisk = 1;
 
-    public IReadOnlyList<ProcessUsage> Scan(string driveRoot, CancellationToken cancellationToken)
+    public IReadOnlyList<ProcessUsage> Scan(string driveRoot, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
     {
-        using var buffer = QueryHandles();
+        progress?.Report(new ScanProgress("システムのハンドル一覧を取得中", 0, null));
+        using var buffer = QueryHandles(cancellationToken);
         var count = Marshal.ReadIntPtr(buffer.Pointer).ToInt64();
+        progress?.Report(new ScanProgress("ファイルハンドルを確認中", 0, count));
         var offset = IntPtr.Size * 2;
         var size = Marshal.SizeOf<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>();
         var pathsByProcess = new Dictionary<int, HashSet<string>>();
 
         for (long index = 0; index < count; index++)
         {
-            if ((index & 1023) == 0) cancellationToken.ThrowIfCancellationRequested();
+            if ((index & 1023) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                progress?.Report(new ScanProgress("ファイルハンドルを確認中", index, count));
+            }
             var entryPointer = IntPtr.Add(buffer.Pointer, checked((int)(offset + index * size)));
             var entry = Marshal.PtrToStructure<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>(entryPointer);
             var pid64 = entry.UniqueProcessId.ToInt64();
@@ -37,6 +43,7 @@ internal sealed class HandleEnumerationScanner
             paths.Add(path);
         }
 
+        progress?.Report(new ScanProgress("検出結果を整理中", count, count));
         return pathsByProcess.Select(pair => ToUsage(pair.Key, pair.Value.Order().ToArray()))
             .Where(usage => usage is not null)
             .Cast<ProcessUsage>()
@@ -84,11 +91,12 @@ internal sealed class HandleEnumerationScanner
         return normalizedPath.StartsWith(driveRoot, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static SafeHGlobalBuffer QueryHandles()
+    private static SafeHGlobalBuffer QueryHandles(CancellationToken cancellationToken)
     {
         var length = 1 << 20;
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var buffer = new SafeHGlobalBuffer(length);
             var status = Native.NtQuerySystemInformation(SystemExtendedHandleInformation, buffer.Pointer, length, out var needed);
             if (status == 0) return buffer;

@@ -8,6 +8,7 @@ A Windows tray application that helps identify processes preventing safe removal
 
 - Lists local removable and external drives, excluding the Windows system drive and network drives.
 - Detects processes holding file handles on the selected drive when run as administrator.
+- Shows scan progress and lets you cancel a long-running handle scan.
 - Shows process name, PID, executable path, locked path, risk level, and a recommended action.
 - Opens the scanner when Windows reports a failed removal request, and can optionally scan automatically.
 - Requires explicit confirmation before terminating a user-selected process; system processes cannot be terminated from the app.
