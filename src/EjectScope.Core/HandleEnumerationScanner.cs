@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using EjectScope.Core.Models;
 
 namespace EjectScope.Core;
@@ -15,16 +16,21 @@ internal sealed class HandleEnumerationScanner
     private const uint DuplicateSameAccess = 0x00000002;
     private const uint FileTypeDisk = 1;
 
-    public IReadOnlyList<ProcessUsage> Scan(string driveRoot, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
+    public HandleScanResult Scan(string driveRoot, string resolverExecutablePath, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
     {
         progress?.Report(new ScanProgress("システムのハンドル一覧を取得中", 0, null));
         using var buffer = QueryHandles(cancellationToken);
+        using var resolver = new HandlePathResolverClient(resolverExecutablePath);
         var count = Marshal.ReadIntPtr(buffer.Pointer).ToInt64();
         progress?.Report(new ScanProgress("ファイルハンドルを確認中", 0, count));
         var offset = IntPtr.Size * 2;
         var size = Marshal.SizeOf<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>();
         var pathsByProcess = new Dictionary<int, HashSet<string>>();
         var processHandles = new Dictionary<int, IntPtr>();
+        var timedOutHandlesByProcess = new Dictionary<int, int>();
+        var skippedProcesses = new HashSet<int>();
+        var targetDevicePath = GetTargetDevicePath(driveRoot);
+        var timedOutHandles = 0;
 
         try
         {
@@ -33,17 +39,34 @@ internal sealed class HandleEnumerationScanner
                 if ((index & 127) == 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    progress?.Report(new ScanProgress("ファイルハンドルを確認中", index, count));
+                    progress?.Report(new ScanProgress("ファイルハンドルを確認中", index, count, timedOutHandles));
                 }
                 var entryPointer = IntPtr.Add(buffer.Pointer, checked((int)(offset + index * size)));
                 var entry = Marshal.PtrToStructure<SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX>(entryPointer);
                 var pid64 = entry.UniqueProcessId.ToInt64();
                 if (pid64 <= 4 || pid64 > int.MaxValue) continue;
+                var pid = (int)pid64;
+                if (skippedProcesses.Contains(pid)) continue;
 
-                var path = TryGetFilePath((int)pid64, entry.HandleValue, processHandles);
-                if (path is null || !IsOnDrive(path, driveRoot)) continue;
-                if (!pathsByProcess.TryGetValue((int)pid64, out var paths)) pathsByProcess[(int)pid64] = paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                paths.Add(path);
+                var localHandle = TryDuplicateDiskHandle(pid, entry.HandleValue, processHandles);
+                if (localHandle == IntPtr.Zero) continue;
+                try
+                {
+                    var resolution = resolver.Resolve(localHandle, cancellationToken);
+                    if (resolution.TimedOut)
+                    {
+                        timedOutHandles++;
+                        var processTimeouts = timedOutHandlesByProcess.GetValueOrDefault(pid) + 1;
+                        timedOutHandlesByProcess[pid] = processTimeouts;
+                        if (processTimeouts >= 3) skippedProcesses.Add(pid);
+                        continue;
+                    }
+                    var path = ToDrivePath(resolution.Path, targetDevicePath, driveRoot);
+                    if (path is null) continue;
+                    if (!pathsByProcess.TryGetValue(pid, out var paths)) pathsByProcess[pid] = paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    paths.Add(path);
+                }
+                finally { Native.CloseHandle(localHandle); }
             }
         }
         finally
@@ -51,13 +74,14 @@ internal sealed class HandleEnumerationScanner
             foreach (var processHandle in processHandles.Values.Where(handle => handle != IntPtr.Zero)) Native.CloseHandle(processHandle);
         }
 
-        progress?.Report(new ScanProgress("検出結果を整理中", count, count));
-        return pathsByProcess.Select(pair => ToUsage(pair.Key, pair.Value.Order().ToArray()))
+        progress?.Report(new ScanProgress("検出結果を整理中", count, count, timedOutHandles));
+        var processes = pathsByProcess.Select(pair => ToUsage(pair.Key, pair.Value.Order().ToArray()))
             .Where(usage => usage is not null)
             .Cast<ProcessUsage>()
             .OrderBy(usage => usage.Risk)
             .ThenBy(usage => usage.ProcessName)
             .ToArray();
+        return new HandleScanResult(processes, timedOutHandles, skippedProcesses.Count);
     }
 
     private static ProcessUsage? ToUsage(int pid, IReadOnlyList<string> paths)
@@ -74,31 +98,34 @@ internal sealed class HandleEnumerationScanner
         catch (InvalidOperationException) { return null; }
     }
 
-    // ObjectTypeIndex cannot be cached as "disk" or "not disk": Windows groups disk files,
-    // pipes, and other kernel file objects under the same File object type.
-    private static string? TryGetFilePath(int pid, IntPtr sourceHandle, Dictionary<int, IntPtr> processHandles)
+    private static IntPtr TryDuplicateDiskHandle(int pid, IntPtr sourceHandle, Dictionary<int, IntPtr> processHandles)
     {
         if (!processHandles.TryGetValue(pid, out var process))
         {
             process = Native.OpenProcess(ProcessDupHandle | ProcessQueryLimitedInformation, false, pid);
             processHandles[pid] = process;
         }
-        if (process == IntPtr.Zero) return null;
-        if (!Native.DuplicateHandle(process, sourceHandle, Native.GetCurrentProcess(), out var duplicate, 0, false, DuplicateSameAccess)) return null;
-        try
-        {
-            if (Native.GetFileType(duplicate) != FileTypeDisk) return null;
-            var path = new char[32_768];
-            var length = Native.GetFinalPathNameByHandle(duplicate, path, (uint)path.Length, 0);
-            return length is 0 or >= 32_768 ? null : new string(path, 0, (int)length);
-        }
-        finally { Native.CloseHandle(duplicate); }
+        if (process == IntPtr.Zero) return IntPtr.Zero;
+        if (!Native.DuplicateHandle(process, sourceHandle, Native.GetCurrentProcess(), out var duplicate, 0, false, DuplicateSameAccess)) return IntPtr.Zero;
+        if (Native.GetFileType(duplicate) == FileTypeDisk) return duplicate;
+        Native.CloseHandle(duplicate);
+        return IntPtr.Zero;
     }
 
-    private static bool IsOnDrive(string path, string driveRoot)
+    private static string GetTargetDevicePath(string driveRoot)
     {
-        var normalizedPath = path.StartsWith("\\\\?\\", StringComparison.Ordinal) ? path[4..] : path;
-        return normalizedPath.StartsWith(driveRoot, StringComparison.OrdinalIgnoreCase);
+        var target = driveRoot.TrimEnd('\\');
+        var buffer = new StringBuilder(32_768);
+        if (Native.QueryDosDevice(target, buffer, buffer.Capacity) == 0)
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "対象ドライブのデバイスパスを取得できませんでした。");
+        return buffer.ToString().TrimEnd('\\');
+    }
+
+    private static string? ToDrivePath(string? ntPath, string targetDevicePath, string driveRoot)
+    {
+        if (ntPath is null || !ntPath.StartsWith(targetDevicePath, StringComparison.OrdinalIgnoreCase)) return null;
+        if (ntPath.Length > targetDevicePath.Length && ntPath[targetDevicePath.Length] != '\\') return null;
+        return driveRoot + ntPath[targetDevicePath.Length..].TrimStart('\\');
     }
 
     private static SafeHGlobalBuffer QueryHandles(CancellationToken cancellationToken)
@@ -135,6 +162,8 @@ internal sealed class HandleEnumerationScanner
         public void Dispose() { if (Pointer != IntPtr.Zero) Marshal.FreeHGlobal(Pointer); }
     }
 
+    internal sealed record HandleScanResult(IReadOnlyList<ProcessUsage> Processes, int TimedOutHandles, int SkippedProcesses);
+
     private static class Native
     {
         [DllImport("ntdll.dll")] internal static extern int NtQuerySystemInformation(int informationClass, IntPtr information, int informationLength, out int returnLength);
@@ -143,6 +172,6 @@ internal sealed class HandleEnumerationScanner
         [DllImport("kernel32.dll")] internal static extern IntPtr GetCurrentProcess();
         [DllImport("kernel32.dll", SetLastError = true)] internal static extern bool CloseHandle(IntPtr handle);
         [DllImport("kernel32.dll", SetLastError = true)] internal static extern uint GetFileType(IntPtr handle);
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern uint GetFinalPathNameByHandle(IntPtr handle, [Out] char[] path, uint length, uint flags);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern uint QueryDosDevice(string deviceName, StringBuilder targetPath, int maxLength);
     }
 }

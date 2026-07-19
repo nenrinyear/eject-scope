@@ -1,4 +1,5 @@
 using System.Windows;
+using EjectScope.Core;
 
 namespace EjectScope.App;
 
@@ -8,6 +9,12 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args is ["--handle-path-resolver"])
+        {
+            HandlePathResolverHost.Run();
+            Shutdown();
+            return;
+        }
         base.OnStartup(e);
         _tray = new TrayController();
         _tray.ShowWindow();

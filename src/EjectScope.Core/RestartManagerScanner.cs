@@ -5,6 +5,14 @@ namespace EjectScope.Core;
 /// <summary>指定ドライブを使用中のプロセスを取得します。</summary>
 public sealed class RestartManagerScanner
 {
+    private readonly string _resolverExecutablePath;
+
+    public RestartManagerScanner(string? resolverExecutablePath = null)
+    {
+        _resolverExecutablePath = resolverExecutablePath ?? Environment.ProcessPath
+            ?? throw new InvalidOperationException("ハンドル解決ヘルパーの実行ファイルを特定できません。");
+    }
+
     public Task<ScanResult> ScanAsync(string drive, CancellationToken cancellationToken = default) =>
         ScanAsync(drive, progress: null, cancellationToken);
 
@@ -19,11 +27,14 @@ public sealed class RestartManagerScanner
         if (!elevated)
             return new ScanResult(root, [], false, "Restart Manager はドライブルートなどのディレクトリを直接検査できません。［管理者として再起動］後に、ファイルハンドルの列挙でスキャンしてください。");
 
-        var handleProcesses = new HandleEnumerationScanner().Scan(root, progress, cancellationToken);
-        return new ScanResult(root, handleProcesses, true,
-            handleProcesses.Count == 0
-                ? "管理者権限でファイルハンドルを調べましたが、対象ドライブを使用中のプロセスは検出されませんでした。"
-                : "管理者権限でファイルハンドルを調べた結果です。表示されたパスを閉じてから、安全な取り外しを再試行してください。");
+        var handleScan = new HandleEnumerationScanner().Scan(root, _resolverExecutablePath, progress, cancellationToken);
+        var timeoutDetail = handleScan.TimedOutHandles == 0
+            ? string.Empty
+            : $" 応答しないハンドル {handleScan.TimedOutHandles} 件をスキップしました（除外プロセス {handleScan.SkippedProcesses} 件）。";
+        return new ScanResult(root, handleScan.Processes, true,
+            handleScan.Processes.Count == 0
+                ? $"管理者権限でファイルハンドルを調べましたが、対象ドライブを使用中のプロセスは検出されませんでした。{timeoutDetail}"
+                : $"管理者権限でファイルハンドルを調べた結果です。表示されたパスを閉じてから、安全な取り外しを再試行してください。{timeoutDetail}");
 
     }
 

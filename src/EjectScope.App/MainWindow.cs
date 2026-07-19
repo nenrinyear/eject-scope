@@ -21,7 +21,7 @@ public sealed class MainWindow : Window
     private readonly ProgressBar _progress = new() { Height = 14, Minimum = 0, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 0, 0, 8) };
     private readonly ObservableCollection<ProcessUsage> _items = [];
     private readonly DataGrid _grid = new() { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Single, MinHeight = 250 };
-    private readonly RestartManagerScanner _scanner = new();
+    private readonly RestartManagerScanner _scanner = new(Environment.ProcessPath);
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly Dictionary<string, DateTime> _recentRemovalFailures = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _scanCancellation;
@@ -173,7 +173,8 @@ public sealed class MainWindow : Window
             _progress.Maximum = Math.Max(total, 1);
             _progress.Value = Math.Min(progress.Completed, total);
             var percent = total == 0 ? 100 : progress.Completed * 100 / total;
-            _status.Text = $"{drive} をスキャンしています… {progress.Phase} ({percent}%)";
+            var timeoutText = progress.TimedOutHandles == 0 ? string.Empty : $"、タイムアウト {progress.TimedOutHandles} 件";
+            _status.Text = $"{drive} をスキャンしています… {progress.Phase} ({percent}%{timeoutText})";
         }
         else _status.Text = $"{drive} をスキャンしています… {progress.Phase}";
     }
