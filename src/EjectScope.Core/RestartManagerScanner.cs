@@ -30,8 +30,9 @@ public sealed class RestartManagerScanner
         var handleScan = new HandleEnumerationScanner().Scan(root, _resolverExecutablePath, progress, cancellationToken);
         var timeoutDetail = handleScan.TimedOutHandles == 0
             ? string.Empty
-            : $" 応答しないハンドル {handleScan.TimedOutHandles} 件をスキップしました（除外プロセス {handleScan.SkippedProcesses} 件）。";
-        return new ScanResult(root, handleScan.Processes, true,
+            : $" 応答しないハンドル {handleScan.TimedOutHandles} 件をスキップしました（判定不能プロセス {handleScan.TimedOutProcesses.Count} 件）。";
+        var displayedProcesses = handleScan.Processes.Concat(handleScan.TimedOutProcesses).ToArray();
+        return new ScanResult(root, displayedProcesses, true,
             handleScan.Processes.Count == 0
                 ? $"管理者権限でファイルハンドルを調べましたが、対象ドライブを使用中のプロセスは検出されませんでした。{timeoutDetail}"
                 : $"管理者権限でファイルハンドルを調べた結果です。表示されたパスを閉じてから、安全な取り外しを再試行してください。{timeoutDetail}");

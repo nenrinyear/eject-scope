@@ -81,7 +81,15 @@ internal sealed class HandleEnumerationScanner
             .OrderBy(usage => usage.Risk)
             .ThenBy(usage => usage.ProcessName)
             .ToArray();
-        return new HandleScanResult(processes, timedOutHandles, skippedProcesses.Count);
+        var timedOutProcesses = skippedProcesses
+            .Where(pid => !pathsByProcess.ContainsKey(pid))
+            .Select(ToTimedOutUsage)
+            .Where(usage => usage is not null)
+            .Cast<ProcessUsage>()
+            .OrderBy(usage => usage.Risk)
+            .ThenBy(usage => usage.ProcessName)
+            .ToArray();
+        return new HandleScanResult(processes, timedOutProcesses, timedOutHandles);
     }
 
     private static ProcessUsage? ToUsage(int pid, IReadOnlyList<string> paths)
@@ -93,6 +101,29 @@ internal sealed class HandleEnumerationScanner
             string? executable = null;
             try { executable = process.MainModule?.FileName; } catch (Win32Exception) { }
             return new ProcessUsage(process.ProcessName, pid, executable, paths, assessment.Risk, assessment.Recommendation, assessment.CanTerminate);
+        }
+        catch (ArgumentException) { return null; }
+        catch (InvalidOperationException) { return null; }
+    }
+
+    private static ProcessUsage? ToTimedOutUsage(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            var assessment = ProcessRiskEvaluator.Evaluate(process.ProcessName);
+            var risk = assessment.Risk == ProcessRisk.NotRecommended ? ProcessRisk.NotRecommended : ProcessRisk.Caution;
+            string? executable = null;
+            try { executable = process.MainModule?.FileName; } catch (Win32Exception) { }
+            return new ProcessUsage(
+                process.ProcessName,
+                pid,
+                executable,
+                ["（パス解決がタイムアウトしたため判定不能）"],
+                risk,
+                "対象ドライブを使用中か確認できませんでした。プロセスの状態を確認してください。",
+                CanTerminate: false,
+                IsConfirmedBlocker: false);
         }
         catch (ArgumentException) { return null; }
         catch (InvalidOperationException) { return null; }
@@ -162,7 +193,10 @@ internal sealed class HandleEnumerationScanner
         public void Dispose() { if (Pointer != IntPtr.Zero) Marshal.FreeHGlobal(Pointer); }
     }
 
-    internal sealed record HandleScanResult(IReadOnlyList<ProcessUsage> Processes, int TimedOutHandles, int SkippedProcesses);
+    internal sealed record HandleScanResult(
+        IReadOnlyList<ProcessUsage> Processes,
+        IReadOnlyList<ProcessUsage> TimedOutProcesses,
+        int TimedOutHandles);
 
     private static class Native
     {

@@ -49,6 +49,7 @@ public sealed class MainWindow : Window
     {
         _grid.Columns.Add(new DataGridTextColumn { Header = "プロセス名", Binding = new System.Windows.Data.Binding(nameof(ProcessUsage.ProcessName)), Width = 130 });
         _grid.Columns.Add(new DataGridTextColumn { Header = "PID", Binding = new System.Windows.Data.Binding(nameof(ProcessUsage.ProcessId)), Width = 70 });
+        _grid.Columns.Add(new DataGridTextColumn { Header = "状態", Binding = new System.Windows.Data.Binding(nameof(ProcessUsage.DetectionStatus)), Width = 130 });
         _grid.Columns.Add(new DataGridTextColumn { Header = "実行ファイル", Binding = new System.Windows.Data.Binding(nameof(ProcessUsage.ExecutablePath)), Width = new DataGridLength(1, DataGridLengthUnitType.Star) });
         _grid.Columns.Add(new DataGridTextColumn { Header = "使用中の範囲", Binding = new System.Windows.Data.Binding("LockedPaths[0]"), Width = 100 });
         _grid.Columns.Add(new DataGridTextColumn { Header = "目安", Binding = new System.Windows.Data.Binding(nameof(ProcessUsage.Risk)), Width = 100 });
@@ -147,7 +148,12 @@ public sealed class MainWindow : Window
             var result = await _scanner.ScanAsync(drive, progress, cancellation.Token);
             _items.Clear();
             foreach (var item in result.Processes) _items.Add(item);
-            _status.Text = result.Processes.Count == 0 ? result.Detail : $"{result.Processes.Count} 件検出。{result.Detail}";
+            var confirmedCount = result.Processes.Count(item => item.IsConfirmedBlocker);
+            var timedOutCount = result.Processes.Count - confirmedCount;
+            var summary = timedOutCount == 0
+                ? $"{confirmedCount} 件検出。"
+                : $"{confirmedCount} 件検出、判定不能 {timedOutCount} 件。";
+            _status.Text = result.Processes.Count == 0 ? result.Detail : summary + result.Detail;
         }
         catch (OperationCanceledException) { _status.Text = "スキャンをキャンセルしました。"; }
         catch (Exception ex) when (ex is ArgumentException or IOException or Win32Exception)

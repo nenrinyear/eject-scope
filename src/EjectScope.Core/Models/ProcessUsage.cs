@@ -7,4 +7,8 @@ public sealed record ProcessUsage(
     IReadOnlyList<string> LockedPaths,
     ProcessRisk Risk,
     string Recommendation,
-    bool CanTerminate);
+    bool CanTerminate,
+    bool IsConfirmedBlocker = true)
+{
+    public string DetectionStatus => IsConfirmedBlocker ? "使用中" : "パス応答なし（判定不能）";
+}
