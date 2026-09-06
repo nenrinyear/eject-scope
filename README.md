@@ -29,6 +29,41 @@ dotnet build EjectScope.sln --configuration Release --no-restore
 dotnet run --project src/EjectScope.App
 ```
 
+## Create a release build
+
+For a portable, self-contained Windows x64 executable that does not require the .NET 10 runtime on the destination computer:
+
+```powershell
+dotnet publish .\src\EjectScope.App\EjectScope.App.csproj `
+  --configuration Release `
+  --runtime win-x64 `
+  --self-contained true `
+  -p:PublishSingleFile=true `
+  -p:IncludeNativeLibrariesForSelfExtract=true `
+  -p:DebugType=None `
+  -p:DebugSymbols=false `
+  --output .\artifacts\publish\win-x64
+```
+
+The distributable executable is created at:
+
+```text
+artifacts\publish\win-x64\EjectScope.App.exe
+```
+
+You can package it for a GitHub release with:
+
+```powershell
+Compress-Archive `
+  -Path .\artifacts\publish\win-x64\EjectScope.App.exe `
+  -DestinationPath .\artifacts\EjectScope-win-x64.zip `
+  -Force
+```
+
+To create a smaller framework-dependent release instead, use `--self-contained false` and distribute the entire publish directory. Users of that build must install the .NET 10 Desktop Runtime.
+
+Trimming is intentionally not enabled because reflection-heavy Windows desktop frameworks can be broken by trimming. Release executables are also not Authenticode-signed by the project, so Windows SmartScreen may warn users about downloaded builds.
+
 ## How detection works
 
 Windows Restart Manager accepts file paths, not a whole drive directory. For drive-level detection, this app duplicates file handles from running processes and resolves their final paths. That requires elevation to inspect handles owned by other processes.
